@@ -1,0 +1,199 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sonar_bot">
+
+  <!-- ============================== -->
+  <!--        PARAMETERS (metres)     -->
+  <!-- ============================== -->
+
+  <!-- Chassis -->
+  <xacro:property name="chassis_length"          value="0.200"/>
+  <xacro:property name="chassis_width"           value="0.200"/>
+  <xacro:property name="chassis_height"          value="0.060"/>
+  <xacro:property name="chassis_floor_clearance" value="0.023"/>
+
+  <!-- Drive wheels (JGA12-N20, 34 mm dia, 7 mm wide) -->
+  <xacro:property name="wheel_radius" value="0.017"/>
+  <xacro:property name="wheel_width"  value="0.007"/>
+  <xacro:property name="track_width"  value="0.220"/>
+
+  <!-- How far the drive axle sits forward of the chassis rear edge -->
+  <xacro:property name="axle_inset" value="0.020"/>
+
+  <!-- Front caster (steel ball, modelled as low-friction sphere) -->
+  <xacro:property name="caster_radius" value="0.008"/>
+  <xacro:property name="caster_inset"  value="0.020"/>
+
+  <!-- Sensor: distance below top of chassis to sensor centre -->
+  <xacro:property name="sensor_below_top" value="0.030"/>
+
+  <!-- Mass estimates (kg) — approximate, tuned for Gazebo stability -->
+  <xacro:property name="chassis_mass" value="1.0"/>
+  <xacro:property name="wheel_mass"   value="0.05"/>
+  <xacro:property name="caster_mass"  value="0.02"/>
+
+  <!-- ============================== -->
+  <!--     COORDINATE CONVENTION      -->
+  <!-- ============================== -->
+  <!--
+    base_footprint: ground plane (z = 0), directly below drive axle midpoint.
+    base_link:      coincident with base_footprint — the robot's origin.
+                    x = forward, y = left, z = up (REP-103).
+    All child links are positioned relative to base_link.
+    The drive axle midpoint is the point the robot rotates around.
+  -->
+
+  <!-- ============================== -->
+  <!--         BASE FOOTPRINT         -->
+  <!-- ============================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============================== -->
+  <!--           BASE LINK            -->
+  <!-- ============================== -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <origin xyz="${chassis_length/2 - axle_inset} 0 ${chassis_floor_clearance + chassis_height/2}"
+              rpy="0 0 0"/>
+      <material name="chassis_grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <origin xyz="${chassis_length/2 - axle_inset} 0 ${chassis_floor_clearance + chassis_height/2}"
+              rpy="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="${chassis_mass}"/>
+      <origin xyz="${chassis_length/2 - axle_inset} 0 ${chassis_floor_clearance + chassis_height/2}"
+              rpy="0 0 0"/>
+      <!-- Box inertia: Ixx = m/12*(w^2+h^2), Iyy = m/12*(l^2+h^2), Izz = m/12*(l^2+w^2) -->
+      <inertia ixx="${chassis_mass/12*(chassis_width**2 + chassis_height**2)}"
+               ixy="0" ixz="0"
+               iyy="${chassis_mass/12*(chassis_length**2 + chassis_height**2)}"
+               iyz="0"
+               izz="${chassis_mass/12*(chassis_length**2 + chassis_width**2)}"/>
+    </inertial>
+  </link>
+
+  <!-- ============================== -->
+  <!--          WHEEL MACRO           -->
+  <!-- ============================== -->
+  <!--
+    Wheels are cylinders whose default axis is z.
+    Rotated pi/2 around x so the cylinder axis aligns with y (the spin axis).
+    Joint axis is (0 1 0) — wheel spins around y.
+  -->
+  <xacro:macro name="wheel" params="prefix y_reflect">
+    <link name="${prefix}_wheel">
+      <visual>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <material name="wheel_black">
+          <color rgba="0.1 0.1 0.1 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <!-- Cylinder inertia (axis along y after rotation):
+             Ixx = Izz = m/12*(3r^2 + h^2), Iyy = m*r^2/2 -->
+        <inertia ixx="${wheel_mass/12*(3*wheel_radius**2 + wheel_width**2)}"
+                 ixy="0" ixz="0"
+                 iyy="${wheel_mass * wheel_radius**2 / 2}"
+                 iyz="0"
+                 izz="${wheel_mass/12*(3*wheel_radius**2 + wheel_width**2)}"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child  link="${prefix}_wheel"/>
+      <origin xyz="0 ${y_reflect * track_width/2} ${wheel_radius}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel prefix="left"  y_reflect="1"/>
+  <xacro:wheel prefix="right" y_reflect="-1"/>
+
+  <!-- ============================== -->
+  <!--         FRONT CASTER           -->
+  <!-- ============================== -->
+  <!--
+    Modelled as a fixed sphere touching the ground.
+    Gazebo friction coefficients will be set near zero later
+    to approximate the omnidirectional ball transfer.
+  -->
+  <link name="caster_wheel">
+    <visual>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+      <material name="caster_silver">
+        <color rgba="0.8 0.8 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${caster_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- Sphere inertia: I = 2/5 * m * r^2 -->
+      <inertia ixx="${2.0/5 * caster_mass * caster_radius**2}"
+               ixy="0" ixz="0"
+               iyy="${2.0/5 * caster_mass * caster_radius**2}"
+               iyz="0"
+               izz="${2.0/5 * caster_mass * caster_radius**2}"/>
+    </inertial>
+  </link>
+
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="caster_wheel"/>
+    <origin xyz="${chassis_length - axle_inset - caster_inset} 0 ${caster_radius}"
+            rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============================== -->
+  <!--         SENSOR FRAME           -->
+  <!-- ============================== -->
+  <!--
+    The ultrasonic phased array sits on the front face of the chassis,
+    30 mm below the top edge. This frame is where the ML inference
+    node publishes sensor_msgs/LaserScan — Nav2 reads it from here.
+    x points forward (outward from the front face), matching the
+    LaserScan convention where angle 0 is straight ahead.
+  -->
+  <link name="sensor_frame"/>
+
+  <joint name="sensor_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="sensor_frame"/>
+    <origin xyz="${chassis_length - axle_inset} 0 ${chassis_floor_clearance + chassis_height - sensor_below_top}"
+            rpy="0 0 0"/>
+  </joint>
+
+</robot>
