@@ -1,0 +1,51 @@
+# Extended Kalman Filter configuration for sonar_bot
+# Fuses wheel encoder odometry + IMU into a single smoothed estimate
+
+ekf_filter_node:
+  ros__parameters:
+    # Run at 50 Hz — matches the wheel_odom and IMU publish rate
+    frequency: 50.0
+
+    # Frame configuration
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # Ground robot: constrain to 2D (zeroes z, roll, pitch and their derivatives)
+    two_d_mode: true
+
+    # Publish the odom -> base_footprint transform
+    publish_tf: true
+
+    # ---- Sensor 0: Wheel odometry ----
+    # Published by ESP32-S3 via micro-ROS as nav_msgs/Odometry
+    # We fuse velocities (vx, vyaw) from the twist, NOT integrated pose.
+    # Reason: the ESP32 computes vx and vyaw directly from encoder tick
+    # rates — raw measurements, not accumulated. Letting the EKF integrate
+    # from velocities gives a better noise model than double-integrating
+    # an already-integrated pose.
+    odom0: /wheel_odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, true,
+                   false, false, false]
+    odom0_differential: false
+
+    # ---- Sensor 1: IMU (MPU6050) ----
+    # Published as sensor_msgs/Imu on /imu
+    # MPU6050 has no magnetometer — it cannot give absolute yaw.
+    # So we fuse only:
+    #   - angular velocity around z (vyaw): raw gyro, high-rate heading correction
+    #   - linear acceleration x (ax): helps constrain velocity during acceleration/braking
+    # We do NOT fuse orientation yaw — without a magnetometer, any yaw in
+    # the orientation field is just integrated gyro, and the EKF already
+    # integrates vyaw internally. Fusing both would double-count.
+    imu0: /imu
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  true,  false, false]
+    imu0_differential: false
+    imu0_remove_gravitational_acceleration: true
