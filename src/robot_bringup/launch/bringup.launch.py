@@ -41,4 +41,14 @@ def generate_launch_description():
             parameters=[ekf_config],
             output='screen',
         ),
+
+        # Reconstruct a dense LaserScan from the 8-beam sparse vector.
+        # Uses the node's built-in defaults (model from package share,
+        # norm_max_range=4.0, angles -49..+49, range [0.25, 4.0]).
+        Node(
+            package='sonar_to_scan',
+            executable='sonar_to_scan_node',
+            name='sonar_to_scan',
+            output='screen',
+        ),
     ])
